@@ -1,0 +1,22 @@
+/exp/
+/pretrained/
+/.idea/
+__pycache__/
+experiments/
+.vscode
+*.zip# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Datasets and experiment outputs
+data/
+experiments/
+checkpoint/
+*.pth
+*.pt
+*.ckpt
+*.log
+events.out.tfevents.*
+*.zip
