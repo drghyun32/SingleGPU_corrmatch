@@ -146,7 +146,7 @@ def main():
         raise SystemExit(f'Checkpoint not found: {checkpoint_path}')
 
     print(f'Checkpoint: {checkpoint_path}', flush=True)
-    print(f'Validation size: {cfg["crop_size"]} x {cfg["crop_size"]}', flush=True)
+    # print(f'Validation size: {cfg["crop_size"]} x {cfg["crop_size"]}', flush=True)
 
     model = DeepLabV3Plus(cfg)
     
@@ -162,14 +162,17 @@ def main():
     model.cuda()
     logger = utils.init_log('corrmatch-eval')
     print(f'Parameters : {utils.count_params(model):.3f} M', flush=True)
-    utils.compute_flops(cfg, model, logger)
+    # utils.compute_flops(cfg, model, logger)
     model.eval()  # compute_flops ends with model.train()
 
     # local_rank = int(os.environ["LOCAL_RANK"])
     # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
     #                                                   output_device=local_rank, find_unused_parameters=False)
 
-    valset = SemiDataset(cfg['dataset'], cfg['data_root'], 'val', size=cfg['crop_size'])
+    valset = SemiDataset(cfg['dataset'], cfg['data_root'], 'val',
+                         size=cfg['crop_size'], # 448 resize for evaluation
+                        # size=None # 1024X2048 image size for evaluation
+                         )
     # valsampler = torch.utils.data.distributed.DistributedSampler(valset)
     # valloader = DataLoader(valset, batch_size=1, pin_memory=True, num_workers=4,
     #                        drop_last=False, sampler=valsampler)
@@ -179,7 +182,24 @@ def main():
                            num_workers=4,
                            drop_last=False)
 
+    # model.eval()
+    # res_val = evaluate(model, valloader, 'original', cfg)
+    img, mask, image_id, img_ori = valset[0]
+    h, w = img.shape[-2:]
+    
+    print(f"Evaluation image [C, H, W]: {tuple(img.shape)}")
+    print(f"Evaluation mask [C, H, W]: {tuple(mask.shape)}")
+    
+    profile_cfg = cfg.copy()
+    profile_cfg['crop_size'] = (h, w)
+    
+    with torch.no_grad():
+        utils.compute_flops(profile_cfg, model, logger)
+    
     model.eval()
+    
+    del img, mask, image_id, img_ori
+    
     res_val = evaluate(model, valloader, 'original', cfg)
 
     mIOU = res_val['mIOU']

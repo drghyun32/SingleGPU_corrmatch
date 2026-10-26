@@ -52,9 +52,9 @@ class SemiDataset(Dataset):
         
         if self.mode == 'val':
             img_ori = np.array(img)
-
-            img = img.resize((self.size, self.size), resample=Image.BILINEAR)
-            mask = mask.resize((self.size, self.size), resample=Image.NEAREST)
+            if self.size is not None:
+                img = img.resize((self.size, self.size), resample=Image.BILINEAR)
+                mask = mask.resize((self.size, self.size), resample=Image.NEAREST)
             ### size check ###
             # print(img.size)
             # print(mask.size)
