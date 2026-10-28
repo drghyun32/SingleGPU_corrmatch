@@ -40,8 +40,8 @@ parser.add_argument('--unlabeled_id_path', type=str, default=osp.join(osp.dirnam
 parser.add_argument('--val_id_path', type=str, default=osp.join(osp.dirname(__file__), "partitions/cityscapes/val.txt"))
 parser.add_argument('--local_rank', default=0, type=int)
 parser.add_argument('--port', default=0, type=int)
-parser.add_argument('--save_path', default=osp.join(osp.dirname(__file__), 'experiments/models/1019_corrmatch_ver3'), type=str)
-parser.add_argument('--log_path', default=osp.join(osp.dirname(__file__), 'experiments/logs/1019_corrmatch_ver3'), type=str)
+parser.add_argument('--save_path', default=osp.join(osp.dirname(__file__), 'experiments/models/corrmatch_ver4'), type=str)
+parser.add_argument('--log_path', default=osp.join(osp.dirname(__file__), 'experiments/logs/corrmatch_ver4'), type=str)
 
 def init_seeds(seed=0, cuda_deterministic=False):
     random.seed(seed)
@@ -123,15 +123,15 @@ def main():
                              cfg['crop_size'], args.unlabeled_id_path)
     trainset_l = SemiDataset(cfg['dataset'], cfg['data_root'], 'train_l',
                              cfg['crop_size'], args.labeled_id_path, nsample=len(trainset_u.ids))
-    valset = SemiDataset(cfg['dataset'], cfg['data_root'], 'val', size=cfg['crop_size'])
+    valset = SemiDataset(cfg['dataset'], cfg['data_root'], 'val', size=cfg['crop_size'], id_path=args.val_id_path)
 
     use_ddp = torch.distributed.is_available() and torch.distributed.is_initialized()
     trainsampler_l = torch.utils.data.distributed.DistributedSampler(trainset_l) if use_ddp else None
     trainloader_l = DataLoader(trainset_l, batch_size=cfg['batch_size'],
-                               pin_memory=False, num_workers=4, drop_last=True, sampler=trainsampler_l)
+                               pin_memory=False, num_workers=4, drop_last=True, sampler=trainsampler_l, shuffle=(trainsampler_l is None))
     trainsampler_u = torch.utils.data.distributed.DistributedSampler(trainset_u) if use_ddp else None
     trainloader_u = DataLoader(trainset_u, batch_size=cfg['batch_size'],
-                               pin_memory=False, num_workers=4, drop_last=True, sampler=trainsampler_u)
+                               pin_memory=False, num_workers=4, drop_last=True, sampler=trainsampler_u, shuffle=(trainsampler_u is None))
     valsampler = torch.utils.data.distributed.DistributedSampler(valset) if use_ddp else None
     valloader = DataLoader(valset, batch_size=1, pin_memory=True, num_workers=4,
                            drop_last=False, sampler=valsampler)
@@ -259,6 +259,22 @@ def main():
 
                 thresh_controller.thresh_update(pred_u_w.detach(), ignore_mask_cutmixed1, update_g=True)
                 thresh_global = thresh_controller.get_thresh_global()
+                # threshold 확인
+                if i % 100 == 0:
+                    valid = (ignore_mask != 255)
+                    confidence = conf_u_w[valid]
+
+                    if confidence.numel() > 0:
+                        accepted = (
+                            confidence >= thresh_global
+                        ).float().mean().item()
+                        logger.info(
+                            f"Pseudo-label check | "
+                            f"epoch={epoch}, step={i}, "
+                            f"threshold={thresh_global.item():.6f}, "
+                            f"confidence_mean={confidence.mean().item():.6f}, "
+                            f"confidence_max={confidence.max().item():.6f}, "
+                            f"accepted_ratio={accepted:.6f}")
 
                 conf_fliter_u_w = ((conf_u_w_cutmixed1 >= thresh_global) & (ignore_mask_cutmixed1 != 255))
                 conf_fliter_u_w_without_cutmix = conf_fliter_u_w.clone()
@@ -334,8 +350,7 @@ def main():
                 scaler.update()
                 optimizer.zero_grad()
 
-                # iters = epoch * len(trainloader_u) + i
-                iters = epoch * len(trainloader_u) + step_in_epoch
+                iters = epoch * len(trainloader_u) + i
                 lr = cfg['lr'] * (1 - iters / total_iters) ** 0.9
                 optimizer.param_groups[0]["lr"] = lr
                 optimizer.param_groups[1]["lr"] = lr * cfg['lr_multi']

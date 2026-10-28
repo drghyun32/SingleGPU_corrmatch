@@ -36,7 +36,15 @@ class SemiDataset(Dataset):
                 random.shuffle(self.ids)
                 self.ids = self.ids[:nsample]
         else:
-            with open('/home/dev/Flow-Attention/partitions/%s/val.txt' % name, 'r') as f:
+            project_dir = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            val_path = (
+                id_path if id_path is not None
+                else os.path.join(
+                    project_dir, 'partitions', name, 'val.txt'
+                ))
+
+            with open(val_path, 'r') as f:
                 self.ids = f.read().splitlines()
 
     def __getitem__(self, item):
@@ -52,6 +60,7 @@ class SemiDataset(Dataset):
         
         if self.mode == 'val':
             img_ori = np.array(img)
+            
             if self.size is not None:
                 img = img.resize((self.size, self.size), resample=Image.BILINEAR)
                 mask = mask.resize((self.size, self.size), resample=Image.NEAREST)
